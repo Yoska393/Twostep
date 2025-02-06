@@ -5,7 +5,8 @@ The source code for the Simulation and application in the "Integrating Proxy Int
 ---
 
 * R
-    * 1.functionCode.R : setting the functions that were used in the scripts
+    * 0.functions : setting the functions that were used in the scripts
+    * 1.
     * 2
     * 3
     * 4
