@@ -1,0 +1,581 @@
+---
+title: "3_metpred"
+output: html_document
+date: "2024-10-28"
+---
+
+
+com19 
+required packages
+```{r, message =F}
+require(BGLR)
+require(here)
+require(ggplot2)
+require(reshape2)
+require(gridExtra)
+library(readr)
+library(stringr)
+library(ggsci)
+library(RAINBOWR)
+library(lubridate)
+library(foreach)
+library(future)
+library(doFuture)
+library(doRNG)
+library(tictoc)
+library(doSNOW)
+library(purrr)
+source("Script/MyFunctions.R")
+library(vegan)
+library(VARshrink)
+library(ggplot2)
+library(glmnet)
+library(lars)
+require(ranger)
+require(ggrepel)
+require(tidyverse)
+
+getwd()
+```
+
+seed
+```{r, message =F}
+# save or read the seed
+seedIndCsv <-  here("out","seedInd.csv")
+if (file.exists(seedIndCsv)) {
+  seedInd <- read.csv(seedIndCsv, row.names = 1, header = T)
+  seedInd <- c(as.matrix(seedInd))
+} else {
+  seedInd <- sample(1:500, 10, replace = F)
+  write.csv(x = seedInd, file =  here("out","seedInd.csv"))
+}
+```
+
+read phenotypic data
+```{r}
+pheno18 <- read.csv(here("2018", "shoot_blup_all_2018.csv"), row.names = 1)
+pheno19 <- read.csv(here("2019", "shoot_blup_all_2019.csv"), row.names = 1)
+pheno20 <- read.csv(here("2020", "shoot_blup_all_2020.csv"), row.names = 1)
+
+plot18<-rownames(pheno18)
+plot19<-rownames(pheno19)
+plot20<-rownames(pheno20)
+
+var18<-pheno18$var.id
+var19<-pheno19$var.id
+var20<-pheno20$var.id
+```
+
+read genomic relationship matrix data
+```{r}
+grm <- readRDS(here("data", "grm_2.rds"))
+head(grm)[,1:3]
+```
+
+read genomic data
+```{r}
+#bm <- read.vcf(here("data", "Gm198_HCDB_190207.fil.snp.remHet.MS0.95_bi_MQ20_DP3-1000.MAF0.025.imputed.v2.chrnum.LD0.95.vcf.gz"),convert.chr = F)
+
+bm<- read.csv(here("data/genome","genoMarker_LD0.001_SNP3078.csv"),row.names = 1)
+
+head(bm)[,1:3]
+
+genome <- as.matrix(bm)
+dim(genome)
+```
+
+
+read metabolomic data
+```{r}
+met<- read.csv(here("2019","2019_Tottori_Jul_RootMetabolome_X.csv"))
+rownames(met) <- paste0(substr(as.matrix(met[7]),1,2),".",sprintf("%03d",as.matrix(met[8])))
+met19 <- met[,10:ncol(met)]
+colnames(met19)<- sub("M","X",colnames(met19))
+
+met <- read.csv(here("2020", "2020_Tottori_Main_RootMetabolome.csv"))
+rownames(met) <- paste0(substr(as.matrix(met[7]),1,2),".",sprintf("%03d",as.matrix(met[8])))
+met20 <- met[,10:ncol(met)]
+
+s_c <- colnames(met19) %in% colnames(met20)
+met19<- met19[,s_c]
+s_c <- colnames(met20) %in% colnames(met19)
+met20<- met20[,s_c]
+table(colnames(met20) == colnames(met19))
+
+dim(met19)
+dim(met20)
+```
+
+read met index
+
+```{r}
+metind<- read.csv(here("data","Metabolome_index.csv"))
+metindex<- matrix(metind[,2],583,1)
+rownames(metindex)<- metind[1:583,1]
+```
+
+read predmet
+```{r}
+predmet20f19 <- read.csv(here("out", "20f19_predmet_GM_blup_OneOut.csv"), row.names = 1)
+predmet19f20 <- read.csv(here("out", "19f20_predmet_GM_blup_OneOut.csv"), row.names = 1)
+
+
+predmet19 <- read.csv(here("out", "19f19_predmet_GM_blup_OneOut.csv"), row.names = 1)
+predmet20 <- read.csv(here("out", "20f20_predmet_GM_blup_OneOut.csv"), row.names = 1)
+```
+
+read microbiome rarificated data
+```{r}
+com <- read.table(here("2018", "table-from-biom-7-2018-after.txt"), row.names = 1)
+rownames(com) <- gsub(";",".",rownames(com))
+com18<- com
+colnames(com18) <- cbind(plot18[201:400],plot18[601:800])
+
+com <- read.csv(here("2019", "table-from-biom-7.csv"), row.names = 1)
+rownames(com) <- gsub(";",".",rownames(com))
+com19<- com
+
+#comriken <- read.csv(here("2020", "table-from-biom-7-2020-after.csv"))
+com <- read.csv(here("2020", "2020_Tottori_Main_Microbiome_Ratio.csv"))
+rownames(com) <- paste0(substr(as.matrix(com[7]),1,2),".",sprintf("%03d",as.matrix(com[8])))
+com <- com[,10:ncol(com)]
+com20 <- t(com)
+
+#s_c <- rownames(com19) %in% rownames(com20)
+#com19<- com19[s_c,]
+#s_c <- rownames(com20) %in% rownames(com19)
+#com20<- com20[s_c,]
+
+s_c <- (rownames(com19) %in% rownames(com20)) & (rownames(com19) %in% rownames(com18))
+com19<- com19[s_c,]
+s_c <- rownames(com20) %in% rownames(com19)
+com20<- com20[s_c,]
+s_c <- rownames(com18) %in% rownames(com20)
+com18<- com18[s_c,]
+
+dim(com18)
+dim(com19)
+dim(com20)
+```
+
+### Drought COntrol
+
+```{r}
+CD ="W4"
+```
+
+select the lines which has pheno, grm, met, micro data in 2019 and 2020
+```{r}
+selector.grm1 <- pheno18$var.id %in% rownames(grm)
+selector.com1 <-rownames(pheno18) %in% colnames(com18)
+
+selector.grm2 <- pheno19$var.id %in% rownames(grm)
+selector.com2 <-rownames(pheno19) %in% colnames(com19)
+
+selector.grm3 <- pheno20$var.id %in% rownames(grm)
+selector.com3 <-rownames(pheno20) %in% colnames(com20)
+
+
+pl<- list(pheno18,pheno19,pheno20)
+pl.sel<- list()
+
+for (i in 2:3){
+pheno<- pl[[i]]
+
+if (i==1) {
+  selector.grm <- selector.grm1
+  selector.com <- selector.com1
+}
+
+else if (i==2) {
+  selector.grm <- selector.grm2
+  selector.com <- selector.com2
+}
+
+else if (i==3) {
+  selector.grm <- selector.grm3
+  selector.com <- selector.com3
+}
+
+
+pheno.sel <- pheno[selector.grm & selector.com, ]
+#head(pheno.sel)
+print(dim(pheno.sel))
+
+selector.cd <- substr(rownames(pheno.sel), 1, 2) == CD 
+pheno.sel.cd <- pheno.sel[selector.cd, ]
+dim(pheno.sel.cd)
+
+plot.id <- rownames(pheno.sel.cd)
+rownames(pheno.sel.cd)<-pheno.sel.cd$var.id
+pheno.sel.cd$var.id <- plot.id
+colnames(pheno.sel.cd)[1]<- "plot.id"
+sg <- rownames(grm) %in% rownames(pheno.sel.cd)
+gv<-rownames(grm[sg,sg])
+pheno.sel.cd<- pheno.sel.cd[gv,]
+print(dim(pheno.sel.cd))
+pl.sel[[i]]<- pheno.sel.cd
+}
+
+#psc18<-  pl.sel[[1]]
+psc19<-  pl.sel[[2]] 
+psc20<-  pl.sel[[3]]
+
+
+
+s_p <- rownames(psc19) %in% rownames(psc20)
+psc19<- psc19[s_p,]
+s_p <- rownames(psc20) %in% rownames(psc19)
+psc20<- psc20[s_p,]
+
+s_p <- colnames(psc19) %in% colnames(psc20)
+psc19<- psc19[,s_p]
+s_p <- colnames(psc20) %in% colnames(psc19)
+psc20<- psc20[,s_p]
+
+table(rownames(psc19) == rownames(psc20))
+
+```
+
+
+
+2019 
+```{r}
+var.id <- rownames(psc19)
+grm.cd <- grm[var.id, var.id]
+plot.id  <- psc19$plot.id
+com19.cd <- t(com19[, plot.id])
+com19.cd <- scale(com19.cd[, apply(com19.cd, 2, sd) > 0])
+#met19ns.cd <- met19[plot.id, ]
+met19.cd <- scale(met19[plot.id, ])
+#predmet19ns<-predmet19
+predmet19<-scale(predmet19)
+genome.cd<- genome[var.id,]
+```
+
+
+2020
+```{r, message =F}
+var.id <- rownames(psc20)
+grm.cd <- grm[var.id, var.id]
+plot.id  <- psc20$plot.id
+com20.cd <- t(com20[, plot.id])
+com20.cd <- scale(com20.cd[, apply(com20.cd, 2, sd) > 0])
+#met20ns.cd <- met20[plot.id, ]
+met20.cd <- scale(met20[plot.id, ])
+#predmetns20<-predmet20
+predmet20<-scale(predmet20)
+#predmetns20f19<-predmet20f19
+predmet20f19<-scale(predmet20f19)
+predmet19f20<-scale(predmet19f20)
+genome.cd<- genome[var.id,]
+```
+
+
+Integrate + RM
+```{r, message =F}
+psc <- rbind(psc19,psc20)
+
+s_c <- colnames(com19.cd) %in% colnames(com20.cd)
+com19.cd<- com19.cd[,s_c]
+s_c <- colnames(com20.cd) %in% colnames(com19.cd)
+com20.cd<- com20.cd[,s_c]
+
+s_c <- colnames(com19.cd) %in% colnames(com20.cd)
+com19.cd<- com19.cd[,s_c]
+s_c <- colnames(com20.cd) %in% colnames(com19.cd)
+com20.cd<- com20.cd[,s_c]
+
+mrm19.cd <- tcrossprod(com19.cd) / ncol(com19.cd)
+mrm20.cd <- tcrossprod(com20.cd) / ncol(com20.cd)
+
+com.cd<- rbind(com19.cd,com20.cd)
+rownames(com.cd)<-rownames(psc)
+mrm.cd <- tcrossprod(com.cd) / ncol(com.cd)
+
+metrm19.cd <- tcrossprod(met19.cd) / ncol(met19.cd)
+metrm20.cd <- tcrossprod(met20.cd) / ncol(met20.cd)
+
+metPrm19.cd <- tcrossprod(predmet19) / ncol(predmet19)
+metPrm20.cd <- tcrossprod(predmet20) / ncol(predmet20)
+
+metPrm20f19.cd <- tcrossprod(predmet20f19) / ncol(predmet20f19)
+metPrm19f20.cd <- tcrossprod(predmet19f20) / ncol(predmet19f20)
+
+#metns.cd <- rbind(met19ns.cd,met20ns.cd)
+met.cd<- rbind(met19.cd,met20.cd)
+rownames(met.cd)<-rownames(psc)
+metrm.cd <- tcrossprod(met.cd) / ncol(met.cd)
+```
+
+```{R}
+comn<-  paste0(rep("OTU_",ncol(com19.cd)),1:ncol(com19.cd))
+comnameL <-colnames(com19.cd)
+colnames(com19.cd)<- comn
+```
+
+
+Define function for RF
+```{r}
+cvRF <- function(y, X) {
+  dat <- data.frame(y, X)
+  y.pred <- matrix(NA, nrow = length(y), ncol = 1)
+  
+    for(j in 1:nrow(y.pred)) {
+      
+      
+      dat.train <- dat[-j, ]
+      dat.test <- dat[j, ]
+      
+      model <- ranger(y ~ ., data = dat.train)
+      model.pred <- predict(model, data = dat.test)
+      y.pred[j, 1] <- model.pred$predictions 
+  }
+  #print(cor(dat$y, y.pred))
+  y.pred
+}
+```
+
+
+Define function for RF2 (Inter)
+```{r}
+cvRF2 <- function(y, y2, X, X2) {
+  dat <- data.frame(y, X)
+  y.pred <- matrix(NA, nrow = length(y), ncol = 1)
+  dat2 <- data.frame(y2, X2)
+  colnames(dat2) <- colnames(dat)
+  y.pred2 <- matrix(NA, nrow = length(y2), ncol = 1)
+  
+    for(j in 1:nrow(y.pred)) {
+ 
+      dat.train <- dat[-j, ]
+      dat.test <- dat[j, ]
+      dat.train2 <- dat2[-j, ]
+      dat.test2 <- dat2[j, ]
+      
+      model <- ranger(y ~ ., data = dat.train2)
+      model.pred <- predict(model, data = dat.test)
+      y.pred[j, 1] <- model.pred$predictions 
+  }
+  #print(cor(dat$y, y.pred))
+  y.pred
+}
+```
+
+### 19 in 19 Model
+
+```{R,eval = TRUE}
+K1 <- grm.cd
+K2 <- com19.cd
+```
+
+### DO pararel
+```{R,eval = TRUE}
+
+Y <- met19.cd
+
+
+iterations=ncol(Y)
+
+cl <- makeCluster(10)
+registerDoSNOW(cl)
+pb <- txtProgressBar(max = iterations, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+tic()
+y.pred.list<- foreach(i = 1:iterations,.options.snow = opts,.export = "ranger") %dopar% {
+
+#for(i in 1:2) {
+  trait.name <- colnames(Y)[i]
+  print(paste(i, "/", ncol(Y), trait.name))
+
+  y <- Y[, i]
+  y.pred.all <- y
+
+  # G model
+  X <- K1
+  y.pred <- cvRF(y, X)
+  r.g <- cor(y, y.pred)[1,]
+  print(r.g)
+  colnames(y.pred) <- paste0("G", "_cv1")
+  y.pred.all <- cbind(y.pred.all, y.pred)
+
+  # M model
+  X <- K2
+  y.pred <- cvRF(y, X)
+  r.g <- cor(y, y.pred)[1,]
+  print(r.g)
+  colnames(y.pred) <- paste0("M", "_cv1")
+  y.pred.all <- cbind(y.pred.all, y.pred)
+
+  # G * M model
+  X <- cbind(K1,K2)
+  y.pred <- cvRF(y, X)
+  r.g <- cor(y, y.pred)[1,]
+  print(r.g)
+  colnames(y.pred) <- paste0("GM", "_cv1")
+  y.pred.all <- cbind(y.pred.all, y.pred)
+
+  # save data
+  print(cor(y.pred.all)[1,])
+  rownames(y.pred.all) <- rownames(psc19)
+  colnames(y.pred.all)[1] <- "y.obs"
+  #write.csv(y.pred.all, here("out", paste0("yPred_", trait.name, "_D.csv")))
+  return(y.pred.all) 
+}
+close(pb)
+stopCluster(cl) 
+toc()
+
+names(y.pred.list) <- colnames(Y)
+saveRDS(y.pred.list, here("out", paste0("yPredMet_RF_", CD, "com.RDS")))
+```
+
+
+### 19 in 19 Model snp and micro
+
+```{}
+K1 <- genome.cd
+K2 <- com19.cd
+```
+
+### DO pararel
+```{}
+
+Y <- met19.cd
+
+
+iterations=ncol(Y)
+
+cl <- makeCluster(6)
+registerDoSNOW(cl)
+pb <- txtProgressBar(max = iterations, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+tic()
+y.pred.list<- foreach(i = 1:iterations,.options.snow = opts,.export = "ranger") %dopar% {
+
+#for(i in 1:2) {
+  trait.name <- colnames(Y)[i]
+  print(paste(i, "/", ncol(Y), trait.name))
+
+  y <- Y[, i]
+  y.pred.all <- y
+
+  # G model
+  X <- K1
+  y.pred <- cvRF(y, X)
+  r.g <- cor(y, y.pred)[1,]
+  print(r.g)
+  colnames(y.pred) <- paste0("G", "_cv1")
+  y.pred.all <- cbind(y.pred.all, y.pred)
+
+  # M model
+  X <- K2
+  y.pred <- cvRF(y, X)
+  r.g <- cor(y, y.pred)[1,]
+  print(r.g)
+  colnames(y.pred) <- paste0("M", "_cv1")
+  y.pred.all <- cbind(y.pred.all, y.pred)
+
+  # G * M model
+  X <- cbind(K1,K2)
+  y.pred <- cvRF(y, X)
+  r.g <- cor(y, y.pred)[1,]
+  print(r.g)
+  colnames(y.pred) <- paste0("GM", "_cv1")
+  y.pred.all <- cbind(y.pred.all, y.pred)
+
+  # save data
+  print(cor(y.pred.all)[1,])
+  rownames(y.pred.all) <- rownames(psc19)
+  colnames(y.pred.all)[1] <- "y.obs"
+  #write.csv(y.pred.all, here("out", paste0("yPred_", trait.name, "_D.csv")))
+  return(y.pred.all) 
+}
+close(pb)
+stopCluster(cl) 
+toc()
+
+names(y.pred.list) <- colnames(Y)
+saveRDS(y.pred.list, here("out", paste0("yPredMet_RF_", CD,"snp","com.RDS")))
+```
+
+### 20 to 19 Model
+
+```{R,eval = TRUE}
+K1   <- grm.cd
+K2   <- com19.cd
+K2.1 <- com20.cd
+```
+
+### DO pararel
+```{R,eval = TRUE}
+Y   <- met19.cd
+Y2  <- met20.cd
+
+iterations=ncol(Y)
+
+cl <- makeCluster(10)
+registerDoSNOW(cl)
+pb <- txtProgressBar(max = iterations, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+tic()
+y.pred.list<- foreach(i = 1:iterations,.options.snow = opts,.export = "ranger") %dopar% {
+
+#for(i in 1:2) {
+  trait.name <- colnames(Y)[i]
+  print(paste(i, "/", ncol(Y), trait.name))
+
+  y <- Y[, i]
+  y2 <- Y2[, i] 
+  y.pred.all <- y
+
+  # G model
+  X <- K1
+  X2 <- K1
+  y.pred <- cvRF2(y, y2, X, X2)
+  r.g <- cor(y, y.pred)[1,]
+  print(r.g)
+  colnames(y.pred) <- paste0("G", "_cv1")
+  y.pred.all <- cbind(y.pred.all, y.pred)
+
+  # M model
+  X <- K2
+  X2 <- K2.1
+  y.pred <- cvRF2(y, y2, X, X2)
+  r.g <- cor(y, y.pred)[1,]
+  print(r.g)
+  colnames(y.pred) <- paste0("M", "_cv1")
+  y.pred.all <- cbind(y.pred.all, y.pred)
+
+  # G * M model
+  X <- cbind(K1,K2)
+  X2 <- cbind(K1,K2.1)
+  y.pred <- cvRF2(y, y2, X, X2)
+  r.g <- cor(y, y.pred)[1,]
+  print(r.g)
+  colnames(y.pred) <- paste0("GM", "_cv1")
+  y.pred.all <- cbind(y.pred.all, y.pred)
+
+  # save data
+  print(cor(y.pred.all)[1,])
+  rownames(y.pred.all) <- rownames(psc19)
+  colnames(y.pred.all)[1] <- "y.obs"
+  #write.csv(y.pred.all, here("out", paste0("yPred_", trait.name, "_D.csv")))
+  return(y.pred.all) 
+}
+close(pb)
+stopCluster(cl) 
+toc()
+
+names(y.pred.list) <- colnames(Y)
+saveRDS(y.pred.list, here("out", paste0("yPredMet_RF_", CD,"19f20", "com.RDS")))
+```
+
+
+

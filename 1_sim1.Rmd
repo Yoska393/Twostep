@@ -1,0 +1,291 @@
+---
+title: "1_Sim1"
+output: html_document
+date: "2024-08-20"
+---
+
+simulation for two step 
+
+
+```{r,message=F,include=FALSE,echo=FALSE}
+library(purrr)
+library(corrplot)
+source("Script/MyFunctions.R")
+library(DiagrammeR)
+library(tictoc)
+library(doSNOW)
+library(ranger)
+library(here)
+library(psych)
+library(MASS)
+library(rrBLUP)
+library(sigmoid)
+```
+
+
+Toy Simulation
+
+# Data Generate 
+
+non linear
+```{r power,fig.dim = c(4, 4),include=T,eval=T}
+# Generate X
+set.seed(123)
+
+n <- 100 #Samples
+a <- 10
+#a2<- 10
+b <- 10
+c <- 10
+d <- 10
+
+ws<- -1
+w <- 1
+p <- 2
+
+#fol<-paste0("out/TSS/TSS_p",p,"nabcd",n,a,b,c,d)
+#fol<-paste0("out/TSS/TSS_abs_nabcd",n,a,b,c,d)
+fol<-paste0("out/TSS/TSS_sigmoid_nabcd",n,a,b,c,d)
+#fol<-paste0("out/TSS/TSS_relu_nabcd",n,a,b,c,d)
+#fol<-paste0("out/TSS/TSS_sigmoid_nabcdw11_",n,a,b,c,d)
+
+
+
+if (!dir.exists(fol)) {
+  dir.create(fol)
+}
+
+if (!dir.exists(paste0(fol,"/pdf"))) {
+  dir.create(paste0(fol,"/pdf"))
+}
+
+
+theta.ab <- matrix(runif(a*b,ws,w),a,b)
+theta.ac <- matrix(runif(a*c,ws,w),a,c)
+
+theta.bc <- matrix(runif(b*c, ws,w),b,c)
+
+theta.db <- matrix(runif(d*b,ws,w),d,b)
+theta.dc <- matrix(runif(d*c,ws,w),d,c)
+
+noise.B <- matrix(rnorm(n = n*b, mean = 0, sd = 1/10),n,b)
+noise.C <- matrix(rnorm(n = n*c, mean = 0, sd = 1/10),n,c)
+
+A <- matrix(rnorm(n = n*a, mean = 0, sd = 1 / (a**(1/2))),n,a)
+D <- matrix(rnorm(n = n*d, mean = 0, sd = 1 / (d**(1/2))),n,d)
+
+
+
+#B <- scale(scale((A)**2 %*% theta.ab + D %*% theta.db) + noise.B)
+B <- scale(scale(sigmoid(A) %*% theta.ab + D %*% theta.db) + noise.B)
+#B <- scale(scale(relu(A) %*% theta.ab + D %*% theta.db) + noise.B)
+#B <- scale(scale(abs(A) %*% theta.ab + D %*% theta.db) + noise.B)
+
+
+B <- B / (b**(1/2))
+C <- scale(A %*% theta.ac + B %*% theta.bc + D %*% theta.dc) + noise.C
+
+
+
+plot(B,scale(A %*% theta.ab))
+plot(B,scale (D %*% theta.db))
+plot(B,scale(A %*% theta.ab + D %*% theta.db))
+plot(C,A %*% theta.ac)
+plot(C,D %*% theta.dc)
+plot(C,B %*% theta.bc)
+plot(C,A %*% theta.ac +  B %*% theta.bc)
+
+boxplot(diag(cor(B,A %*% theta.ab)), main=expression(paste("COR between B and A", theta[ab])))
+
+# hist(A)
+# hist(B)
+# hist(C)
+# hist(D)
+
+```
+
+
+```{r}
+tr(crossprod(B,B))
+tr(crossprod(A,A))
+tr(crossprod(D,D))
+```
+
+# test
+
+# predict B
+
+```{r, message =F, include=TRUE,eval=T}
+
+RFlist <- list(A=list(A=A))
+
+Y <- B
+
+tic()
+res <- getRF(RFlist,Y)
+toc()
+
+saveRDS(res,paste0(fol,"/","resb_a"))
+```
+
+```{r, message =F, include=TRUE}
+res<- readRDS(paste0(fol,"/","resb_a"))
+
+file_path <- paste0(fol,"/pdf/boxplot_bfa.pdf")
+# Open a PDF device
+pdf(file = file_path, width = 8, height = 5) 
+#png(file = file_path, width = 2900, height =1800, res = 400)
+# Create the boxplot
+boxplot(t(res$resultEachModel), main="Bpred fitting by")
+
+# Close the PDF device
+dev.off()
+boxplot(t(res$resultEachModel), main="Bpred fitting by")
+
+```
+  
+
+```{r, message =F, include=TRUE,eval=T}
+res<- readRDS(paste0(fol,"/","resb_a"))
+Bpred <- matrix(NA, nrow = nrow(Y), ncol = ncol(Y))
+for (i in 1:ncol(Y)){
+Bpred[,i] <- res$y.pred.list[[i]][,"A"]
+}
+saveRDS(Bpred,paste0(fol,"/","Bpred_A"))
+```
+
+```{r}
+Bpred<- readRDS(paste0(fol,"/","Bpred_A"))
+``` 
+
+ABpred
+
+```{r, message =F, include=TRUE,eval=T}
+AB  <- list(A=A,B=B)
+ABpred <- list(A=A, Bpred=Bpred)
+RFlist <- list(A=list(A=A),ABpred=ABpred)
+
+Y <- C
+tic()
+res <- getRF(RFlist,Y)
+toc()
+
+saveRDS(res,paste0(fol,"/","res_abpred"))
+```
+
+```{r, message =F, include=TRUE}
+res<- readRDS(paste0(fol,"/","res_abpred"))
+
+file_path <- paste0(fol,"/pdf/boxplot4ab_2.pdf")
+# Open a PDF device
+pdf(file = file_path, width = 5, height = 5) 
+#png(file = file_path, width = 2900, height =1800, res = 400)
+# Create the boxplot
+boxplot(t(res$resultEachModel), main="Cpred fitting by",ylim=c(0,0.8))
+
+# Close the PDF device
+dev.off()
+boxplot(t(res$resultEachModel), main="Cpred fitting by",ylim=c(0,0.8))
+
+plot(t(res$resultEachModel))
+abline(0,1,col="red")
+
+colMeans(t(res$resultEachModel))
+
+```
+
+Note that, in the simulation, all traits (Variables of C) are displayed equally
+
+
+
+```{r, message =F, include=TRUE}
+AB  <- list(A=A,B=B)
+ABpred <- list(A=A, Bpred=Bpred)
+ABD <- list(A=A, B=B, D=D)
+RFlist <- list(A=list(A=A),B=list(B=B),Bpred=list(Bpred=Bpred),D=list(D=D),AB=AB,ABpred=ABpred,ABD=ABD)
+
+Y <- C
+tic()
+res <- getRF(RFlist,Y)
+toc()
+
+saveRDS(res,paste0(fol,"/","res_abbdababd"))
+```
+
+```{r}
+RFlist <- list(Bpred_B=list(Bpred=Bpred))
+
+Y <- C
+
+tic()
+res2 <- getRF(RFlist,Y,dummy="Bpred",Tv=B)
+toc()
+saveRDS(res2,paste0(fol,"/","res_bpred_b"))
+```
+
+
+
+```{r}
+res<- readRDS(paste0(fol,"/","res_abbdababd"))
+res2<- readRDS(paste0(fol,"/","res_bpred_b"))
+
+res12_all<- rbind(data.frame(res$resultEachModel),data.frame(res2$resultEachModel))
+
+file_path <- paste0(fol,"/pdf/boxplot2.pdf")
+# Open a PDF device
+pdf(file = file_path, width = 8, height = 5) 
+
+# Create the boxplot
+boxplot(t(res12_all),main="Cpred fitting")
+
+# Close the PDF device
+dev.off()
+
+file_path <- paste0(fol,"/pdf/boxplot2nb.pdf")
+# Open a PDF device
+pdf(file = file_path, width = 8, height = 5) 
+
+# Create the boxplot
+boxplot(t(res$resultEachModel),main="Cpred fitting by")
+
+# Close the PDF device
+dev.off()
+
+
+file_path <- paste0(fol,"/pdf/boxplot4ab.pdf")
+# Open a PDF device
+pdf(file = file_path, width = 8, height = 5) 
+
+# Create the boxplot
+boxplot(t(res12_all[c(1,6),]),main="Cpred fitting by")
+# Close the PDF device
+dev.off()
+
+
+
+boxplot(t(res$resultEachModel),main="Cpred fitting by")
+boxplot(t(res12_all),main="Cpred fitting by")
+boxplot(t(res12_all[c(1,6),]),main="Cpred fitting by")
+```
+Note that, in the simulation, all traits (Variables of C) are displayed equally
+
+
+
+```{r}
+#res$resultEachModel
+#res2$resultEachModel
+
+res12<- rbind(data.frame(res$resultEachModel)[3,],data.frame(res2$resultEachModel))
+
+file_path <- paste0(fol,"/pdf/boxplot3.pdf")
+
+# Open a PDF device
+pdf(file = file_path, width = 8, height = 5) 
+
+boxplot(t(res12),main="Cpred fitting by")
+
+# Close the PDF device
+dev.off()
+
+boxplot(t(res12),main="Cpred fitting by")
+```

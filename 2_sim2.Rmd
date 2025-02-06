@@ -1,0 +1,767 @@
+---
+title: "2_Sim2"
+output: html_document
+date: "2024-10-28"
+---
+
+```{r,message=F,include=FALSE,echo=FALSE}
+library(purrr)
+library(corrplot)
+source("Script/MyFunctions.R")
+
+library(DiagrammeR)
+library(tictoc)
+library(doSNOW)
+library(ranger)
+library(here)
+library(psych)
+
+library(MASS)
+library(rrBLUP)
+#library(sigmoid)
+```
+
+
+Toy Simulation
+
+# abpred
+
+
+run
+```{r}
+# Setup before loop
+set.seed(123)
+n <- 100
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+ws<- -1
+w <- 1
+
+#for(model in c("sigmoid","linear")){
+#for(model in c("tanh")){
+for(model in c("sigmoid","p2","relu","linear")){
+#
+#for(model in c("binary")){
+#for(model in c("binary")){
+#for(model in c("tanh","binary")){
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite6/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 21:100) {
+ print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d)
+  
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+  data <- simdata5(n=n, a=a, b=b, c=c, d=d, ws=ws, w=w, model=model,noise=0.1)
+  
+    
+  A <- data$A
+  B <- data$B
+  C <- data$C
+  D <- data$D
+  
+  # Prediction and saving results
+  RFlist <- list(A=list(A=A))
+  Y <- B
+  res <- getRF(RFlist, Y)
+  
+  
+  saveRDS(res, paste0(fol, "/resb_a"))
+  
+  # Generate boxplot for this iteration
+  file_path <- paste0(fol,"/pdf/boxplot_iteration_", iteration, ".pdf")
+  pdf(file = file_path, width = 8, height = 5)
+  boxplot(t(res$resultEachModel), main=paste("Bpred fitting by - Iteration", iteration))
+  dev.off()
+  
+  Bpred <- matrix(NA, nrow = nrow(Y), ncol = ncol(Y))
+  for (i in 1:ncol(Y)) {
+    Bpred[,i] <- res$y.pred.list[[i]][,"A"]
+  }
+  saveRDS(Bpred, paste0(fol, "/Bpred_A"))
+  
+  Bpred<- readRDS(paste0(fol,"/","Bpred_A"))
+
+  AB  <- list(A=A,B=B)
+  ABpred <- list(A=A, Bpred=Bpred)
+  RFlist <- list(A=list(A=A),ABpred=ABpred)
+  
+  Y <- C
+
+  res <- getRF(RFlist,Y)
+
+  saveRDS(res,paste0(fol,"/","res_abpred"))
+  res<- readRDS(paste0(fol,"/","res_abpred"))
+  
+  # Generate additional plots
+  file_path <- paste0(fol, "/pdf/boxplot4ab_2_iter_", iteration, ".pdf")
+  pdf(file = file_path, width = 5, height = 5)
+  boxplot(t(res$resultEachModel), main=paste("C Prediction by - Iteration", iteration), ylim=c(0,0.8))
+  dev.off()
+  
+  cor10<-t(res$resultEachModel)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res$resultEachModel)
+  cv<-rbind(cv,corm)
+}
+
+saveRDS(cvv,paste0(base_fol,"/",model,"cor10"))
+saveRDS(cv,paste0(base_fol,"/",model,"corm"))
+
+cvv<-readRDS(paste0(base_fol,"/",model,"cor10"))
+cv <-readRDS(paste0(base_fol,"/",model,"corm"))
+
+max_cv <- max(cv, na.rm = TRUE)
+min_cv <- min(cv, na.rm = TRUE)
+# Create the plot using the max and min for x and y limits
+plot(cv, xlim = c(min_cv, max_cv), ylim = c(min_cv, max_cv), 
+     main = model, xlab = "A", ylab = "ABpred")
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+max_cvv <- max(cvv, na.rm = TRUE)
+min_cvv <- min(cvv, na.rm = TRUE)
+
+# Create the plot using the max and min for x and y limits
+plot(cvv, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+     main = model, xlab = "A", ylab = "ABpred")
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+boxplot(cv)
+boxplot(cvv)
+
+ 
+}
+
+
+```
+
+
+# plot
+```{r, fig.width=5, fig.height=5}
+n <- 100
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+ws<- -1
+w <- 1
+
+#for(model in c("sigmoid","p2","relu","binary")){
+
+for(model in c("sigmoid","p2","relu","linear")){
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite6/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 1:100) {
+ #print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d)
+  
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+  Bpred<- readRDS(paste0(fol,"/","Bpred_A"))
+
+  res<- readRDS(paste0(fol,"/","res_abpred"))
+
+  cor10<-t(res$resultEachModel)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res$resultEachModel)
+  cv<-rbind(cv,corm)
+}
+
+saveRDS(cvv,paste0(base_fol,"/",model,"cor10"))
+saveRDS(cv,paste0(base_fol,"/",model,"corm"))
+
+cvv<-readRDS(paste0(base_fol,"/",model,"cor10"))
+cv <-readRDS(paste0(base_fol,"/",model,"corm"))
+ 
+# 
+# max_cv <- max(cv, na.rm = TRUE)
+# min_cv <- min(cv, na.rm = TRUE)
+
+if (model %in% c("sigmoid", "p2")) {
+    max_cv <- 0.3
+    min_cv <- -0.1
+} else if (model %in% c("relu")) {
+    max_cv <- 0.5
+    min_cv <- 0.1
+  } else if (model %in% c("linear")) {
+    max_cv <- 0.8
+    min_cv <- 0.4
+  }
+
+if(model=="p2"){
+ model="square"
+}
+
+# # Create the plot using the max and min for x and y limits
+plot(cv, xlim = c(min_cv, max_cv), ylim = c(min_cv, max_cv),
+     main = paste0("model : ",model),ylab="Trained by A + Bpred", xlab="Trained by A")
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+max_cvv <-  1.0
+min_cvv <- -0.4
+
+print(model)
+print(table((cv[,1]-cv[,2]) < 0))
+print(table((cvv[,1]-cvv[,2]) < 0))
+# Create the plot using the max and min for x and y limits
+plot(cvv, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+     main = paste0("model : ",model),ylab="Trained by A + Bpred", xlab="Trained by A",
+     cex=0.5
+     #, xlab = "A", ylab = "ABpred"
+     )
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+boxplot(cv,ylim=c(min_cv, max_cv), 
+     main = paste0("model : ",model))
+boxplot(cvv,ylim=c(min_cvv, max_cvv), 
+     main = paste0("model : ",model))
+}
+
+
+```
+
+```{r, fig.width=7, fig.height=5}
+## Required libraries
+library(ggplot2)
+
+# Define models and base folder
+models <- c("p2", "relu", "sigmoid", "linear")
+base_fol <- "out/TSS/ite6/"
+
+# Initialize an empty data frame to store all model information
+all_data <- data.frame(value = numeric(), model = character(), training = character())
+
+# Loop through each model and load the corresponding data
+for (model in models) {
+  # Load the saved `cv` data for each model
+  cv <- readRDS(paste0(base_fol, "/", model, "corm"))
+  
+  # Adjust model name if it's "p2"
+  if (model == "p2") {
+    model <- "square"
+  }
+  
+  # Create two data frames for `A` and `Apred`
+  cv_A_data <- data.frame(value = cv[, 1], model = model,  training= "A")      # Column for A
+  cv_Apred_data <- data.frame(value = cv[, 2], model = model, training = "ABpred")  # Column for Apred
+  
+  # Combine into all_data
+  all_data <- rbind(all_data, cv_A_data, cv_Apred_data)
+}
+
+# Create the boxplot using ggplot2 with requested settings
+ggplot(all_data, aes(x = model, y = value, fill = training)) +
+  geom_boxplot(position = position_dodge(width = 0.8), color = "black") +
+  scale_fill_manual(values = c("A" = "white", "ABpred" = "gray")) +
+  labs(title = "Boxplot of Model Performance by Training Type",
+       x = "", y = "COR") +
+  theme_minimal(base_size = 14) +
+  theme(#panel.grid = element_blank(),  # Remove grid lines
+        panel.background = element_rect(fill = "white"), # Set a background color
+        axis.text.x = element_text(angle = 0, hjust = 0.5))      # Ensure x-axis labels are centered
+
+
+# データを準備
+all_data$model <- factor(all_data$model, levels = unique(all_data$model))
+all_data$training <- factor(all_data$training, levels = c("A", "ABpred"))
+
+# モデルとトレーニングを組み合わせて新しいファクターを作成
+all_data$combined <- factor(paste(all_data$model, all_data$training), 
+                             levels = sort(unique(paste(all_data$model, all_data$training))))
+
+# プロットの背景色を設定
+par(bg = "white")  # プロットの背景色を白に設定
+```
+
+
+```{r, fig.width=7, fig.height=5}
+all_data$combined <- factor(all_data$combined, 
+                            levels = c("linear A", "linear ABpred", 
+                                       "relu A", "relu ABpred", 
+                                       "square A", "square ABpred", 
+                                       "sigmoid A", "sigmoid ABpred"))
+# コンバインドファクターに基づくボックスプロットを生成
+boxplot(value ~ combined, data = all_data,
+        col = c("white", "gray"),   # A と ABpred の色
+        main = "C Prediction",
+        ylab = "COR", 
+        xlab = "",
+        las = 2,  # 軸ラベルの方向を調整
+        border = "black", 
+        xaxt = 'n')  # x軸ラベルを非表示にする
+
+# ユニークなモデルとトレーニングの組み合わせを取得
+unique_combinations <- levels(all_data$combined)
+
+# x軸の位置を計算
+n_unique <- length(unique_combinations)
+at_positions <- seq(1, n_unique)  # すべての位置
+
+# 手動でラベルを設定（偶数のラベルをブランクに）
+# axis_labels <- ifelse(seq_along(unique_combinations) %% 2 == 1, 
+#                       unique_combinations, 
+#                       "")  # 偶数番目のラベルを空白に
+
+axis_labels <- c("linear","relu","sigmoid","square")
+axis_labels <- c("linear", "relu", "square", "sigmoid")
+
+# 奇数のラベルを右に移動（適宜数値を調整）
+custom_positions <- seq(1.5, n_unique, by = 2)  # 奇数ラベルを右に移動
+
+# x軸にカスタムラベルを追加
+axis(1, at = custom_positions, labels = axis_labels[seq_along(custom_positions)], las = 1)
+
+# レジェンドを追加
+legend("topright", legend = c("A", "ABpred"), fill = c("white", "gray"))
+
+```
+
+
+
+# linear B
+
+run
+```{r}
+# Setup before loop
+set.seed(123)
+n <- 100
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+ws<- -1
+w <- 1
+model <- "linear" 
+
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite3/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 1:100) {
+ print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d)
+  
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+  data <- simdata4(n=n, a=a, b=b, c=c, d=d, ws=ws, w=w, model=model)
+  
+  
+  A <- data$A
+  B <- data$B
+  C <- data$C
+  D <- data$D
+  
+  
+  # Prediction and saving results
+  RFlist <- list(A=list(A=A))
+  Y <- B
+  res <- getRF(RFlist, Y)
+  
+  saveRDS(res, paste0(fol, "/resb_a"))
+  
+  # Generate boxplot for this iteration
+  file_path <- paste0(fol,"/pdf/boxplot_iteration_", iteration, ".pdf")
+  pdf(file = file_path, width = 8, height = 5)
+  boxplot(t(res$resultEachModel), main=paste("Bpred fitting by - Iteration", iteration))
+  dev.off()
+  
+  Bpred <- matrix(NA, nrow = nrow(Y), ncol = ncol(Y))
+  for (i in 1:ncol(Y)) {
+    Bpred[,i] <- res$y.pred.list[[i]][,"A"]
+  }
+  saveRDS(Bpred, paste0(fol, "/Bpred_A"))
+  
+  Bpred<- readRDS(paste0(fol,"/","Bpred_A"))
+
+  
+  AB  <- list(A=A,B=B)
+  ABpred <- list(A=A, Bpred=Bpred)
+  ABD <- list(A=A, B=B, D=D)
+  RFlist <- list(A=list(A=A),B=list(B=B),Bpred=list(Bpred=Bpred),D=list(D=D),AB=AB,ABpred=ABpred,ABD=ABD)
+  
+  Y <- C
+  tic()
+  res <- getRF(RFlist,Y)
+  toc()
+
+  saveRDS(res,paste0(fol,"/","res_abbdababd"))
+  
+  RFlist <- list(Bpred_B=list(Bpred=Bpred))
+
+  Y <- C
+  
+  tic()
+  res2 <- getRF(RFlist,Y,dummy="Bpred",Tv=B)
+  toc()
+  saveRDS(res2,paste0(fol,"/","res_bpred_b"))
+  
+  res12_all<- rbind(data.frame(res$resultEachModel),data.frame(res2$resultEachModel))
+
+  cor10<-t(res12_all)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res12_all)
+  cv<-rbind(cv,corm)
+}
+
+saveRDS(cvv,paste0(base_fol,"/",model,"cpcor10"))
+saveRDS(cv,paste0(base_fol,"/",model,"cpcorm"))
+
+# cvv<-readRDS(paste0(base_fol,"/",model,"cpcor10"))
+# cv <-readRDS(paste0(base_fol,"/",model,"cpcorm"))
+
+boxplot(cvv)
+boxplot(cv)
+
+boxplot(cvv[,c(-8)],main="C Prediction",ylab="COR",cex.main=1.4,ylim=c(-0.1,1))
+boxplot(cv[,c(-8)],main="C Prediction",ylab="COR",cex.main=1.4,ylim=c(0.3,0.9))
+
+cvb<-cv[,c(8,3)]
+cvvb<-cvv[,c(8,3)]
+
+max_cv <- max(cvb, na.rm = TRUE)
+min_cv <- min(cvb, na.rm = TRUE)
+# Create the plot using the max and min for x and y limits
+plot(cvb, xlim = c(min_cv, max_cv), ylim = c(min_cv, max_cv), 
+     main = "COR")
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+max_cvv <- max(cvvb, na.rm = TRUE)
+min_cvv <- min(cvvb, na.rm = TRUE)
+
+# Create the plot using the max and min for x and y limits
+plot(cvvb, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+     main = "COR"
+     #, xlab = "A", ylab = "ABpred"
+     )
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+
+
+
+```
+
+plot and save
+```{r}
+# Setup before loop
+set.seed(123)
+n <- 100
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+ws<- -1
+w <- 1
+model <- "linear" 
+
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite3/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 1:100) {
+ print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d)
+  
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+  data <- simdata4(n=n, a=a, b=b, c=c, d=d, ws=ws, w=w, model=model)
+  
+  
+  A <- data$A
+  B <- data$B
+  C <- data$C
+  D <- data$D
+  
+
+  res<-readRDS(paste0(fol,"/","res_abbdababd"))
+  
+  res2<-readRDS(paste0(fol,"/","res_bpred_b"))
+  
+  res12_all<- rbind(data.frame(res$resultEachModel),data.frame(res2$resultEachModel))
+
+  cor10<-t(res12_all)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res12_all)
+  cv<-rbind(cv,corm)
+}
+
+# saveRDS(cvv,paste0(base_fol,"/",model,"cpcor10"))
+# saveRDS(cv,paste0(base_fol,"/",model,"cpcorm"))
+
+# cvv<-readRDS(paste0(base_fol,"/",model,"cpcor10"))
+# cv <-readRDS(paste0(base_fol,"/",model,"cpcorm"))
+
+
+boxplot(cvv)
+boxplot(cv)
+
+boxplot(cvv[,c(-8)],main="C Prediction",ylab="COR",cex.main=1.4,ylim=c(-0.1,1))
+boxplot(cv[,c(-8)],main="C Prediction",ylab="COR",cex.main=1.4,ylim=c(0.3,0.9))
+
+
+cvb<-cv[,c(8,3)]
+cvvb<-cvv[,c(8,3)]
+
+max_cv <- max(cvb, na.rm = TRUE)
+min_cv <- min(cvb, na.rm = TRUE)
+# Create the plot using the max and min for x and y limits
+plot(cvb, xlim = c(min_cv, max_cv), ylim = c(min_cv, max_cv), 
+     main = "COR")
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+max_cvv <- max(cvvb, na.rm = TRUE)
+min_cvv <- min(cvvb, na.rm = TRUE)
+
+# Create the plot using the max and min for x and y limits
+plot(cvvb, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+     main = "COR"
+     #, xlab = "A", ylab = "ABpred"
+     )
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+
+
+
+```
+
+```{r, fig.width=8, fig.height=5}
+model <- "linear" 
+base_fol <- "out/TSS/ite3/"
+cvv<-readRDS(paste0(base_fol,"/",model,"cpcor10"))[1:1000,]
+cv <-readRDS(paste0(base_fol,"/",model,"cpcorm"))[1:100,]
+
+
+boxplot(cvv)
+boxplot(cv)
+
+boxplot(cvv[,c(-8)],main="C Prediction",ylab="COR",cex.main=1.4,ylim=c(-0.2,0.9))
+boxplot(cv[,c(-8)],main="C Prediction",ylab="COR",cex.main=1.4,ylim=c(0.2,0.9))
+```
+
+
+```{r, fig.width=5, fig.height=5}
+cvb<-cv[,c(8,3)]
+cvvb<-cvv[,c(8,3)]
+
+# max_cv <- max(cvb, na.rm = TRUE)
+# min_cv <- min(cvb, na.rm = TRUE)
+# 
+# max_cvv <- max(cvvb, na.rm = TRUE)
+# min_cvv <- min(cvvb, na.rm = TRUE)
+
+max_cv <- 0.6
+min_cv <- 0.2
+# Create the plot using the max and min for x and y limits
+plot(cvb, xlim = c(min_cv, max_cv), ylim = c(min_cv, max_cv), 
+     main = "C Prediction",ylab="Trained by Bpred", xlab="Trained by True B")
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+print(table((cvb[,1]-cvb[,2]) < 0))
+# max_cvv <- max(cvvb, na.rm = TRUE)
+# min_cvv <- min(cvvb, na.rm = TRUE)
+
+max_cvv <- 0.9
+min_cvv <- -0.3
+
+# Create the plot using the max and min for x and y limits
+plot(cvvb, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+     main = "C Prediction",ylab="Trained by Bpred", xlab="Trained by True B",
+     cex=0.2
+     #, xlab = "A", ylab = "ABpred"
+     )
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+```
+
+# plot
+```{r, fig.width=5, fig.height=5}
+cva<-cv[,c(1,6)]
+cvva<-cvv[,c(1,6)]
+
+min_cv <- min(cva)
+max_cv <- max(cva)
+max_cv <-  0.8
+min_cv <-  0.2
+
+
+plot(cva, xlim = c(min_cv, max_cv), ylim = c(min_cv, max_cv), 
+     main = paste0("model : ",model),ylab="Trained by A + Bpred", xlab="Trained by A")
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+min_cvv <- min(cvva)
+max_cvv <- max(cvva)
+
+max_cvv <-  0.9
+min_cvv <-  -0.4
+
+# max_cvv <- max(cvvb, na.rm = TRUE)
+# min_cvv <- min(cvvb, na.rm = TRUE)
+
+# Create the plot using the max and min for x and y limits
+plot(cvva, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+     main = paste0("model : ",model),ylab="Trained by Bpred", xlab="Trained by True B",
+     cex=0.8
+     #, xlab = "A", ylab = "ABpred"
+     )
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+
+
+boxplot(cva,ylim=c(min_cv, max_cv), 
+     main = paste0("model : ",model))
+boxplot(cvva,ylim=c(min_cvv, max_cvv), 
+     main = paste0("model : ",model))
+
+
+```
+
+
+
+# bpred
+run
+```{r}
+# Setup before loop
+set.seed(123)
+n <- 100
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+ws<- -1
+w <- 1
+model <- "linear" 
+
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite3/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 51:100) {
+ print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d)
+  
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+  data <- simdata4(n=n, a=a, b=b, c=c, d=d, ws=ws, w=w, model=model)
+  
+  
+  A <- data$A
+  B <- data$B
+  C <- data$C
+  D <- data$D
+  
+  AD = list(A=A,D=D)
+  RFlist <- list(A=list(A=A),D=list(D=D),AD=AD)
+
+  Y <- B
+  res <- getRF(RFlist, Y)
+  
+  saveRDS(res, paste0(fol, "/resb_adad"))
+  
+  cor10<-t(res$resultEachModel)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res$resultEachModel)
+  cv<-rbind(cv,corm)
+}
+
+saveRDS(cvv,paste0(base_fol,"/",model,"bpcor10"))
+saveRDS(cv,paste0(base_fol,"/",model,"bpcorm"))
+```
+
+
+#ADAD for linear
+```{r, fig.width=8, fig.height=5}
+
+set.seed(123)
+n <- 100
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+ws<- -1
+w <- 1
+model <- "linear" 
+
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite3/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 1:100) {
+ print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d)
+  
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+
+  res <- readRDS(paste0(fol, "/resb_adad"))
+  
+  cor10<-t(res$resultEachModel)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res$resultEachModel)
+  cv<-rbind(cv,corm)
+}
+
+cvv<-readRDS(paste0(base_fol,"/",model,"bpcor10"))
+cv <-readRDS(paste0(base_fol,"/",model,"bpcorm"))
+
+boxplot(cvv,main="B prediction",ylab="COR",cex.main=1.4,ylim=c(0,1.0))
+boxplot(cv,main="B prediction",ylab="COR",cex.main=1.4,ylim=c(0.2,0.9))
+
+```
+
