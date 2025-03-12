@@ -309,7 +309,7 @@ simdata5<-function(n,a,b,c,d,ws,w,model=c("p2","p4","abs","sigmoid","relu","line
 	B <- (An %*% theta.ab + D %*% theta.db + noise.B)
 	
 	B <- B / (b**(1/2))
-	C <- (An %*% theta.ac + B %*% theta.bc + D %*% theta.dc) + noise.C
-	#C <- A %*% theta.ac + B %*% theta.bc + D %*% theta.dc + noise.C
+	#C <- (An %*% theta.ac + B %*% theta.bc + D %*% theta.dc) + noise.C
+	C <- A %*% theta.ac + B %*% theta.bc + D %*% theta.dc + noise.C
 	return(list(A = A, B = B, C = C, D = D))
 }
