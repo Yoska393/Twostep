@@ -1,0 +1,496 @@
+---
+title: "RF-BLUP"
+author: "Hayato Yoshioka"
+date: "2025-08-21"
+output: html_document
+---
+
+
+Simulation: Prediction model
+
+A->B->C
+
+In case of BLUP-RF
+
+```{r,message=F,include=FALSE,echo=FALSE}
+library(purrr)
+library(corrplot)
+source("Script/MyFunctions.R")
+
+library(DiagrammeR)
+library(tictoc)
+library(doSNOW)
+library(ranger)
+library(here)
+library(psych)
+library(MASS)
+library(rrBLUP)
+#library(sigmoid)
+```
+
+
+Toy Simulation
+
+# abpred
+
+run
+```{r, fig.width=5, fig.height=5,echo=FALSE}
+# Setup before loop
+set.seed(123)
+n <- 30
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+e<- 0.5
+ws<- -1
+w <- 1
+
+#for(model in c("sigmoid","linear")){
+#for(model in c("tanh")){
+for(model in c("sigmoid","p2","relu","linear")){
+#for(model in c("linear")){
+
+
+# Create directories if they don't exist
+print(model)
+base_fol <- "out/TSS/ite_abpred/b2rf/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 1:10) {
+ print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d, e)
+  
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+  data <- simdata6(n=n, a=a, b=b, c=c, d=d, ws=ws, w=w, model=model,noise=e)
+  
+    
+  A <- data$A
+  B <- data$B
+  C <- data$C
+  D <- data$D
+  
+  base_fol2 <- "out/TSS/ite_abpred/BLUP/"
+  fol2 <- paste0(base_fol2, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d, e)
+  
+  Bpred<- readRDS(paste0(fol2,"/","Bpred_A"))
+  
+  
+  ABpred <- list(A=A, Bpred=Bpred)
+  RFlist <- list(ABpred=ABpred)
+  
+  Y <- C
+
+  
+  res <- getBLUP_simulation(ZETAlist,Y)
+  saveRDS(res,paste0(fol,"/","res_abpred"))
+
+  
+  #res<- readRDS(paste0(fol2,"/","res_abpred"))
+
+  res2 <- getRFab(RFlist,Y,dummy="Bpred",Tv=B)
+
+  
+  saveRDS(res2,paste0(fol,"/","res_abpred_b"))
+  
+  res12_all<- rbind(data.frame(res2$resultEachModel),data.frame(res$resultEachModel))
+  
+  rownames(res12_all)<-c("ABpred_AB","ABpred")
+  
+  cor10<-t(res12_all)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res12_all)
+  cv<-rbind(cv,corm)
+}
+
+saveRDS(cvv,paste0(base_fol,"/",model,"cor10"))
+saveRDS(cv,paste0(base_fol,"/",model,"corm"))
+
+cvv<-readRDS(paste0(base_fol,"/",model,"cor10"))
+cv <-readRDS(paste0(base_fol,"/",model,"corm"))
+
+max_cvv <- 1
+min_cvv <- -1
+
+# # Create the plot using the max and min for x and y limits
+# plot(cv, xlim = c(min_cv, max_cv), ylim = c(min_cv, max_cv), 
+#      main = model)
+# 
+# # Add the 45-degree line
+# abline(0, 1, col = "red")
+# max_cv <- 1
+# min_cv <- -1
+# 
+# # Create the plot using the max and min for x and y limits
+# plot(cvv, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+#      main = model)
+# 
+# # Add the 45-degree line
+# abline(0, 1, col = "red")
+# 
+# 
+# boxplot(cv)
+# boxplot(cvv)
+
+}
+
+
+```
+
+
+# plot make
+```{r, fig.width=5, fig.height=5}
+
+n <- 30
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+e<- 0.5
+
+ws<- -1
+w <- 1
+
+#for(model in c("sigmoid","p2","relu","binary")){
+par(pty="s")
+for(model in c("sigmoid","p2","relu","linear")){
+#for(model in c("sigmoid")){
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite_abpred/b2rf/"
+base_fol2 <- "out/TSS/ite_abpred/BLUP/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 1:10) {
+ #print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d, e)
+  fol2 <- paste0(base_fol2, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d, e)
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+  #Bpred<- readRDS(paste0(fol,"/","Bpred_A"))
+
+  res<- readRDS(paste0(fol,"/","res_abpred"))
+
+  res2<-readRDS(paste0(fol,"/","res_abpred_b"))
+  
+  res12_all<- rbind(data.frame(res2$resultEachModel),data.frame(res$resultEachModel))
+  
+  rownames(res12_all)<-c("ABpred_AB","ABpred")
+  
+  
+  cor10<-t(res12_all)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res12_all)
+  cv<-rbind(cv,corm)
+}
+
+saveRDS(cvv,paste0(base_fol,"/",model,"cor10"))
+saveRDS(cv,paste0(base_fol,"/",model,"corm"))
+
+cvv<-readRDS(paste0(base_fol,"/",model,"cor10"))
+cv <-readRDS(paste0(base_fol,"/",model,"corm"))
+ 
+boxplot(cvv)
+ 
+# max_cv <- max(cv, na.rm = TRUE)
+# min_cv <- min(cv, na.rm = TRUE)
+
+if(model=="p2"){
+ model="square"
+}
+max_cv <- 1
+min_cv <- -1
+
+# # Create the plot using the max and min for x and y limits
+plot(cv, xlim = c(min_cv, max_cv), ylim = c(min_cv, max_cv),
+     main = paste0("BLUP-RF : ",model),ylab="Trained by A + Bpred", xlab="Trained by A + B")
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+max_cvv <-  1
+min_cvv <- -1
+
+print(model)
+print(table((cv[,1]-cv[,2]) < 0))
+print(table((cvv[,1]-cvv[,2]) < 0))
+# Create the plot using the max and min for x and y limits
+plot(cvv, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+     main = paste0("BLUP-RF : ",model),ylab="Trained by A + Bpred", xlab="Trained by A + B",
+     cex=1
+     #, xlab = "A", ylab = "ABpred"
+     )
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+t_test_result <- wilcox.test(cvv[,1], cvv[,2], paired = TRUE)
+print(t_test_result$p.value)
+}
+#par()
+
+
+
+```
+
+
+```{r, fig.width=8, fig.height=8}
+# 2×2のレイアウトを設定
+n <- 30
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+e<- 0.5
+par(mfrow = c(2, 2),pty="s")
+
+for (model in c("linear", "relu", "p2", "sigmoid")) {
+base_fol <- "out/TSS/ite_abpred/b2rf/"
+base_fol2 <- "out/TSS/ite_abpred/BLUP/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 1:10) {
+ #print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d, e)
+  fol2 <- paste0(base_fol2, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d, e)
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+  #Bpred<- readRDS(paste0(fol,"/","Bpred_A"))
+
+  res<- readRDS(paste0(fol,"/","res_abpred"))
+
+  res2<-readRDS(paste0(fol,"/","res_abpred_b"))
+  
+  res12_all<- rbind(data.frame(res2$resultEachModel),data.frame(res$resultEachModel))
+  
+  rownames(res12_all)<-c("ABpred_AB","ABpred")
+  
+  
+  cor10<-t(res12_all)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res12_all)
+  cv<-rbind(cv,corm)
+}
+
+saveRDS(cvv,paste0(base_fol,"/",model,"cor10", n, a, b, c, d, e))
+saveRDS(cv,paste0(base_fol,"/",model,"corm", n, a, b, c, d, e))
+
+
+# max_cv <- max(cv, na.rm = TRUE)
+# min_cv <- min(cv, na.rm = TRUE)
+
+
+if(model=="p2"){
+ model="square"
+}
+max_cv <- 1
+min_cv <- -1
+
+
+
+max_cvv <-  1
+min_cvv <- -1
+cvv_original <- cvv
+cvv<- subset(cvv, cvv[,1] >= 0 | cvv[,2] >= 0)
+removed_cvv <- cvv_original[!(cvv_original[,1] >= 0 | cvv_original[,2] >= 0), ]
+print(model)
+print(table((cv[,1]-cv[,2]) < 0))
+print(table((cvv[,1]-cvv[,2]) < 0))
+# Create the plot using the max and min for x and y limits
+plot(cvv, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+     main = paste0("C prediction (BLUP-RF): ",model),ylab="Trained by A + Bpred", xlab="Trained by A + B",
+     cex=1
+     #, xlab = "A", ylab = "ABpred"
+     )
+points(removed_cvv, col = "gray", pch = 1)
+# Add the 45-degree line
+abline(0, 1, col = "red")
+saveRDS(cvv_original,paste0(base_fol,model,"cvv.RDS"))
+}
+
+# レイアウトを元に戻す
+par(mfrow = c(1, 1))
+
+```
+
+
+# plot from cv
+```{, fig.width=5, fig.height=5}
+n <- 30
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+ws<- -1
+w <- 1
+
+#for(model in c("sigmoid","p2","relu","binary")){
+
+for(model in c("sigmoid","p2","relu","linear")){
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite_abpred/rf/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+
+cvv<-readRDS(paste0(base_fol,"/",model,"cor10"))[1:100,]
+cv <-readRDS(paste0(base_fol,"/",model,"corm"))
+ 
+
+# max_cv <- max(cv, na.rm = TRUE)
+# min_cv <- min(cv, na.rm = TRUE)
+
+
+
+if(model=="p2"){
+ model="square"
+}
+max_cv <- 1
+min_cv <- -1
+
+# # Create the plot using the max and min for x and y limits
+plot(cv, xlim = c(min_cv, max_cv), ylim = c(min_cv, max_cv),
+     main = paste0("RF : ",model),ylab="Trained by A + Bpred", xlab="Trained by A + B")
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+
+max_cvv <-  1
+min_cvv <- -1
+
+print(model)
+print(table((cv[,1]-cv[,2]) < 0))
+print(table((cvv[,1]-cvv[,2]) < 0))
+# Create the plot using the max and min for x and y limits
+plot(cvv, xlim = c(min_cvv, max_cvv), ylim = c(min_cvv, max_cvv), 
+     main = paste0("RF : ",model),ylab="Trained by A + Bpred", xlab="Trained by A + B",
+     cex=1
+     #, xlab = "A", ylab = "ABpred"
+     )
+
+# Add the 45-degree line
+abline(0, 1, col = "red")
+# boxplot(cv,ylim=c(min_cv, max_cv), 
+#      main = paste0("RF : ",model))
+# boxplot(cvv,ylim=c(min_cvv, max_cvv), 
+#      main = paste0("RF : ",model))
+}
+
+
+#saveRDS(cv,here)
+
+```
+
+
+#A to B
+
+```{}
+# Setup before loop
+set.seed(123)
+n <- 30
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+ws<- -1
+w <- 1
+
+#for(model in c("sigmoid","linear")){
+#for(model in c("tanh")){
+for(model in c("sigmoid","p2","relu","linear")){
+#for(model in c("p2","relu","linear")){
+print(model)
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite_abpred/rf/"
+dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+# Assuming folder creation is required only once
+cv<-c()
+cvv<-c()
+# Loop over 100 iterations
+for (iteration in 1:10) {
+ print(iteration)
+  fol <- paste0(base_fol, "TSS_",model,"_nabcd_iter", iteration, "_", n, a, b, c, d, e)
+  
+  # Ensure directories for each iteration
+  dir.create(fol, showWarnings = FALSE, recursive = TRUE)
+  dir.create(paste0(fol, "/pdf"), showWarnings = FALSE, recursive = TRUE)
+
+  data <- simdata5(n=n, a=a, b=b, c=c, d=d, ws=ws, w=w, model=model,noise=e)
+  
+  A <- data$A
+  B <- data$B
+  C <- data$C
+  D <- data$D
+  
+  
+  Z<-diag(n)
+  
+  KZA<- list(A= list(K = bt(A), Z = Z))
+  #KZB<- list(A= list(K = bt(B), Z = Z))
+  #KZC<- list(A= list(K = bt(C), Z = Z))
+  #KZD<- list(A= list(K = bt(D), Z = Z))
+  
+  # Prediction and saving results
+  #ZETAlist <- list(A=KZA)
+  #names(ZETAlist)<-c("KZA")
+  
+  Y <- B
+  
+  #res<- getBLUP_simulation(ZETAlist,Y)
+  res <- getRF(RFlist, Y)
+  
+  #saveRDS(res, paste0(fol, "/resb_a"))
+  
+  #Bpred <- res$predictDataList[[1]]
+  res<- readRDS(paste0(fol, "/resb_a"))
+  #saveRDS(Bpred, paste0(fol, "/Bpred_A"))
+
+  
+  cor10<-t(res$resultEachModel)
+  cvv<-rbind(cvv,cor10)
+  corm<-rowMeans(res$resultEachModel)
+  cv<-rbind(cv,corm)
+
+
+}
+
+saveRDS(cvv,paste0(base_fol,"/",model,"cor10_b"))
+saveRDS(cv,paste0(base_fol,"/",model,"corm_b"))
+
+  
+ 
+}
+
+
+```
+
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

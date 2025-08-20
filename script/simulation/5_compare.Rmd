@@ -1,0 +1,373 @@
+---
+title: "Model Comparison"
+author: "Hayato Yoshioka"
+date: "2025-08-21"
+output: html_document
+---
+
+
+4 scenarios (linear, ReLU, square, and sigmoid)
+4 prediction model combinations (BLUP-BLUP, BLUP-RF, RF-BLUP, and RF-RF). 
+3 scenarios
+
+(i) Proxy-omics model (\(\mathbf{A} + \mathbf{B}_{\text{pred}}\), blue), 
+(ii) Observed-omics model (\(\mathbf{A} + \mathbf{B}\), orange), 
+(iii) None-omics model (\(\mathbf{A}\), gray). 
+
+
+Wilcoxon signed-rank test (one-sided, paired samples), with significance levels noted in the plot: * \(p < 0.05\), ** \(p < 0.01\).
+
+
+```{r,message=F,include=FALSE,echo=FALSE}
+library(purrr)
+library(corrplot)
+source("Script/MyFunctions.R")
+library(DiagrammeR)
+library(tictoc)
+library(doSNOW)
+library(ranger)
+library(here)
+library(psych)
+library(MASS)
+library(rrBLUP)
+#library(sigmoid)
+```
+
+
+```{r, fig.width=12, fig.height=12}
+base_fol <- "out/TSS/ite_abpred/rf"
+base_fol <- "out/TSS/ite_abpred/BLUP"
+base_fol <- "out/TSS/ite_abpred/r2b"
+base_fol <- "out/TSS/ite_abpred/b2rf"
+
+  
+
+par(mfrow = c(2, 2),pty="s")
+for (model in c("linear", "relu", "p2", "sigmoid")) {
+
+  
+  #dir.create(base_fol, showWarnings = FALSE, recursive = TRUE)
+  
+  cvv_yos<-readRDS(paste0(base_fol, "/", model, "cor10", n, a, b, c, d, e))
+  
+  
+  
+  # base_fol <- "out/TSS/ite_abpred/LOO_GOBLUP/"
+  # cvv_go<-readRDS(paste0(base_fol, model, "_cvv.rds"))
+  # 
+  
+  # base_fol <- "out/TSS/ite_abpred/multiBLUP/"
+  # cvv_multi<-readRDS(paste0(base_fol, model, "_cvv.rds"))
+  # colnames(cvv_multi)<-"mB"
+  # 
+  single_fol <- "out/TSS/ite_abpred/singleBLUP/"
+  cvv_single<-readRDS(paste0(single_fol, model, "_cvv.rds"))
+  colnames(cvv_single)<-"sB"
+  
+  mat<-cbind(cvv_yos[,2],cvv_yos[,1],cvv_single)
+  colnames(mat)<-c("AB_proxy","AB_observed","A")
+  boxplot(mat, main = paste0("C prediction (BLUP-BLUP): ", model), )
+}
+```
+
+
+```{r, fig.width=10, fig.height=10}
+# 4パターンのフォルダと凡例ラベルを対応づけ
+pairs <- list(
+  "out/TSS/ite_abpred/rf"   = "RF-RF",
+  "out/TSS/ite_abpred/BLUP" = "BLUP-BLUP",
+  "out/TSS/ite_abpred/r2b"  = "RF-BLUP",
+  "out/TSS/ite_abpred/b2rf" = "BLUP-RF"
+)
+
+# A（single）側が常にsingleBLUPならこのまま
+base_fol_single <- "out/TSS/ite_abpred/singleBLUP/"
+
+for (k in seq_along(pairs)) {
+  base_fol <- names(pairs)[k]
+  pair_lab <- unname(pairs[[k]])
+
+  par(mfrow = c(2, 2), pty = "s")
+  for (model in c("linear", "relu", "p2", "sigmoid")) {
+
+    # 例: .../linearcor10{n}{a}{b}{c}{d}{e}
+    cvv_yos <- readRDS(paste0(base_fol, "/", model, "cor10", n, a, b, c, d, e))
+
+    cvv_single <- readRDS(paste0(base_fol_single, model, "_cvv.rds"))
+    colnames(cvv_single) <- "sB"
+
+    mat <- cbind(cvv_yos[, 2], cvv_yos[, 1], cvv_single)
+    colnames(mat) <- c("(i) AB_proxy", "(ii) AB_observed", "(iii) A")
+    
+    if (model == "p2"){
+      model<-"square"
+    }
+
+    boxplot(
+      mat,
+      main = paste0("C prediction (", pair_lab, "): ", model)
+    )
+  }
+}
+
+```
+
+```{r}
+
+```
+
+
+```{r, fig.width=10, fig.height=10}
+library(tidyverse)
+
+
+pairs <- list(
+  "out/TSS/ite_abpred/rf"   = "RF-RF",
+  "out/TSS/ite_abpred/BLUP" = "BLUP-BLUP",
+  "out/TSS/ite_abpred/r2b"  = "RF-BLUP",
+  "out/TSS/ite_abpred/b2rf" = "BLUP-RF"
+)
+models <- c("linear", "relu", "p2", "sigmoid")
+base_fol_single <- "out/TSS/ite_abpred/singleBLUP/"
+
+df_all <- list()
+
+for (k in seq_along(pairs)) {
+  base_fol <- names(pairs)[k]
+  pair_lab <- unname(pairs[[k]])
+  
+  for (model in models) {
+    cvv_yos <- readRDS(paste0(base_fol, "/", model, "cor10", n, a, b, c, d, e))
+    cvv_single <- readRDS(paste0(base_fol_single, model, "_cvv.rds"))
+    colnames(cvv_single) <- "sB"
+    
+    mat <- cbind(cvv_yos[,2], cvv_yos[,1], cvv_single)
+    colnames(mat) <- c("(i) AB_proxy", "(ii) AB_observed", "(iii) A")
+    
+    disp_model <- if (model == "p2") "square" else model
+    
+    df_tmp <- as.data.frame(mat) %>%
+      mutate(pair = pair_lab,
+             model = disp_model)
+    
+    df_all[[length(df_all)+1]] <- df_tmp
+  }
+}
+
+df_all <- bind_rows(df_all) %>%
+  pivot_longer(cols = c("(i) AB_proxy", "(ii) AB_observed", "(iii) A"),
+               names_to = "type", values_to = "value")
+
+
+df_all$type <- factor(df_all$type,
+                      levels = c("(i) AB_proxy", "(ii) AB_observed", "(iii) A"))
+df_all$model <- factor(df_all$model,
+                       levels = c("linear", "relu", "square", "sigmoid"))
+
+
+ggplot(df_all, aes(x = type, y = value, fill = type)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.85) +
+  facet_grid(pair ~ model) +
+  theme_bw(base_size = 12) +
+  theme(
+    strip.text = element_text(face="bold"),
+    axis.text.x = element_text(angle = 25, hjust = 1),
+    legend.position = "none"
+  ) +
+  scale_fill_manual(values = c(
+    "(i) AB_proxy"   = "#1f77b4", 
+    "(ii) AB_observed" = "#ff7f0e", 
+    "(iii) A"        = "grey70"   
+  )) +
+  labs(
+    title = "C prediction across pairs and models",
+    x = "",
+    y = "COR"
+  )
+
+
+```
+
+```{r, fig.width=10, fig.height=10}
+library(rstatix)
+library(ggpubr)
+
+#definition
+comparisons_list <- list(
+  c("(i) AB_proxy",     "(ii) AB_observed"),
+  c("(i) AB_proxy",     "(iii) A"),
+  c("(ii) AB_observed", "(iii) A")
+)
+
+# NA removed
+df_all_clean <- df_all %>% dplyr::filter(!is.na(value))
+
+# Wilcoxon（oneside：greater、= group1 > group2）
+stat_res <- df_all_clean %>%
+  group_by(pair, model) %>%
+  wilcox_test(value ~ type,
+              paired = TRUE,
+              comparisons = comparisons_list,
+              alternative = "greater") %>%
+  ungroup() %>%
+  mutate(
+    p_label = dplyr::case_when(
+      p < 0.01 ~ "**",
+      p < 0.05 ~ "*",
+      TRUE ~ "ns"          
+    )
+  )
+
+
+ymax_by_facet <- df_all_clean %>%
+  group_by(pair, model) %>%
+  summarise(ymax = max(value, na.rm = TRUE), .groups = "drop")
+
+stat_res$p.adj.signif <-stat_res$p_label
+
+stat_res_plot <- stat_res %>%
+  left_join(ymax_by_facet, by = c("pair", "model")) %>%
+  group_by(pair, model) %>%
+  arrange(group1, group2, .by_group = TRUE) %>%
+  mutate(y.position = ymax + 0.05 + 0.05 * (row_number() - 1)) %>%
+  ungroup()
+
+
+p <- ggplot(df_all_clean, aes(x = type, y = value, fill = type)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.85) +
+  facet_grid(pair ~ model) +
+  theme_bw(base_size = 12) +
+  theme(
+    strip.text = element_text(face="bold"),
+    axis.text.x = element_text(angle = 25, hjust = 1),
+    legend.position = "none"
+  ) +
+  scale_fill_manual(values = c(
+    "(i) AB_proxy"     = "#1f77b4",
+    "(ii) AB_observed" = "#ff7f0e",
+    "(iii) A"          = "grey70"
+  )) +
+  labs(
+    title = "C prediction across pairs and models",
+    x = "",
+    y = "COR",
+    subtitle = "Wilcoxon signed-rank test (one-sided). Significance: * p < 0.05, ** p < 0.01"
+  ) +
+  ggpubr::stat_pvalue_manual(
+    stat_res_plot,
+    label        = "p_label",      # "*", "**", "ns"
+    y.position   = "y.position",
+    xmin         = "group1",
+    xmax         = "group2",
+    tip.length   = 0.01,
+    bracket.size = 0.4,
+    size         = 3,
+    hide.ns      = TRUE            # "ns" not shown
+  )
+
+p
+```
+
+
+```{r}
+sigsum<-stat_res[,c(1,2,4,5,9)]
+
+print(sigsum)
+
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(xtable)
+
+
+sig_mark <- function(p) {
+  ifelse(is.na(p), "",
+         ifelse(p < 0.01, "**",
+                ifelse(p < 0.05, "*", "")))
+}
+
+fmt_p_tex <- function(p) {
+  if (is.na(p)) return("")
+  if (p >= 1e-3) return(sprintf("%.3f", p))
+  expo <- floor(log10(p))
+  mant <- p / (10^expo)
+  paste0(sprintf("%.2f", mant), "$\\times$10$^{", expo, "}$")
+}
+
+
+make_cell <- function(p) {
+  lab <- sig_mark(p)
+  paste0(fmt_p_tex(p), ifelse(lab == "", "", paste0("\\,", lab)))
+}
+
+# --- (i) vs (ii), (i) vs (iii) 
+sig_wide <- sigsum %>%
+  dplyr::filter(group1 == "(i) AB_proxy",
+                group2 %in% c("(ii) AB_observed", "(iii) A")) %>%
+  dplyr::mutate(comp = ifelse(group2 == "(ii) AB_observed",
+                              "(i) vs (ii)", "(i) vs (iii)")) %>%
+  dplyr::select(pair, model, comp, p) %>%
+  tidyr::pivot_wider(names_from = comp, values_from = p)
+
+sig_wide <- sig_wide %>%
+  arrange(pair, model) %>%
+  mutate(
+    `(i) vs (ii)`  = vapply(`(i) vs (ii)`,  make_cell, character(1)),
+    `(i) vs (iii)` = vapply(`(i) vs (iii)`, make_cell, character(1))
+  ) %>%
+  dplyr::rename(Scenario = pair, Model = model)
+
+print(
+  xtable(sig_wide,
+         caption = "Wilcoxon signed-rank test (one-sided, (i)<(ii), (i)<(iii))",
+         label = "tab:signif"),
+  include.rownames = FALSE,
+  sanitize.text.function = identity,  # TeX記法をそのまま出力
+  booktabs = TRUE
+)
+
+```
+
+
+
+```{r}
+n <- 30
+a <- 10
+b <- 10
+c <- 10
+d <- 10
+e <- 0.5
+
+ws<- -1
+w <- 1
+
+#for(model in c("sigmoid","p2","relu","binary")){
+
+#par(pty="s")
+for(model in c("linear","relu","p2","sigmoid")){
+#for(model in c("sigmoid")){
+# Create directories if they don't exist
+base_fol <- "out/TSS/ite_abpred/BLUP/"
+
+cvv_yos<-readRDS(paste0(base_fol, "/", model, "cor10", n, a, b, c, d, e))
+
+
+if(model=="p2"){
+ model="square"
+}
+
+
+w_test_result <- wilcox.test(cvv_yos[,2], cvv_yos[,1], paired = TRUE, alternative = "greater")$p.value
+
+print(model)
+print(w_test_result)
+
+}
+
+```
+
+
+
