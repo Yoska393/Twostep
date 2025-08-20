@@ -10,6 +10,12 @@ doi: https://doi.org/10.1101/2025.03.14.643213
 
 ## Repository structure
 
+### Functions
+
+| File | Model / Purpose |
+|------|-----------------|
+| `MyFunctions.R` | Custom helper functions |
+
 ### Simulation
 
 | File | Model / Purpose |
@@ -24,10 +30,9 @@ doi: https://doi.org/10.1101/2025.03.14.643213
 
 | File | Description |
 |------|-------------|
-| `1_metpred.Rmd` | Metabolome-based prediction |
+| `1_metpred.Rmd` | Metabolome prediction |
 | `2_phenopred_GMet.Rmd` | Phenotype prediction using genomic + metabolomic data |
-| `3_phenopred_GMicroMet.Rmd` | Phenotype prediction using genomic + micro-metabolomic data |
-| `MyFunctions.R` | Custom helper functions |
+| `3_phenopred_GMicroMet.Rmd` | Phenotype prediction using genomic + micro + metabolomic data |
 
 
 ---
