@@ -4,6 +4,8 @@
 
 The source codes for the Simulation and application in the "Integration of Proxy Intermediate Omics traits into a Nonlinear Two-Step model for accurate phenotypic prediction" are available here.
 
+
+
 doi: [https://doi.org/10.1007/s00122-026-05171-3](https://doi.org/10.1007/s00122-026-05171-3)
 
 
@@ -36,5 +38,9 @@ doi: [https://doi.org/10.1007/s00122-026-05171-3](https://doi.org/10.1007/s00122
 
 
 ---
+
+## Reference
+
+Yoshioka, H., Mary-Huard, T., Aubert, J. et al. Integration of proxy intermediate omics traits into a nonlinear two-step model for accurate phenotypic prediction. Theor Appl Genet 139, 86 (2026). https://doi.org/10.1007/s00122-026-05171-3
 
 
