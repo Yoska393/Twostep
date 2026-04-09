@@ -2,9 +2,9 @@
 
 <img src="GA.jpg" width="800">
 
-The source code for the Simulation and application in the "Integration of Proxy Intermediate Omics traits into a Nonlinear Two-Step model for accurate phenotypic prediction" was uploaded here.
+The source codes for the Simulation and application in the "Integration of Proxy Intermediate Omics traits into a Nonlinear Two-Step model for accurate phenotypic prediction" are available here.
 
-doi: https://doi.org/10.1101/2025.03.14.643213
+doi: [https://doi.org/10.1007/s00122-026-05171-3](https://doi.org/10.1007/s00122-026-05171-3)
 
 
 
